@@ -1,3 +1,9 @@
+test/
+*.pt
+examples/jxie___dtd
+examples/MNIST
+*.lock
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
