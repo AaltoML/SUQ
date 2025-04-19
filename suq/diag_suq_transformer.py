@@ -255,14 +255,30 @@ def forward_fuse_multi_head_cov(QKV_cov, project_W, diag_cov = False):
         return output_var_einsum.permute(1, 2, 0)
 
 class SUQ_LayerNorm_Diag(nn.Module):
-    
+    """
+    LayerNorm module with uncertainty propagation under SUQ.
+
+    Wraps `nn.LayerNorm` and propagates input variance analytically using running statistics. See the SUQ paper for theoretical background and assumptions.
+
+    Inputs:
+        LayerNorm (nn.LayerNorm): The original layer norm module to wrap
+    """
+
     def __init__(self, LayerNorm):
         super().__init__()
         
         self.LayerNorm = LayerNorm
     
     def forward(self, x_mean, x_var):
-        
+        """
+        Inputs:
+            x_mean (Tensor): Input mean, shape [B, T, D]
+            x_var (Tensor): Input variance, shape [B, T, D]
+
+        Outputs:
+            out_mean (Tensor): Output mean after layer norm, shape [B, T, D]
+            out_var (Tensor): Output variance after layer norm, shape [B, T, D]
+        """
         with torch.no_grad():
         
             out_mean = self.LayerNorm.forward(x_mean)
@@ -272,7 +288,18 @@ class SUQ_LayerNorm_Diag(nn.Module):
 
 
 class SUQ_Classifier_Diag(nn.Module):
-    
+    """
+    Classifier head with uncertainty propagation under SUQ, with a diagonal Gaussian posterior.
+
+    Wraps a standard linear classifier and applies closed-form mean and variance propagation.
+    See the SUQ paper for theoretical background and assumptions.
+
+    Inputs:
+        classifier (nn.Linear): The final classification head
+        w_var (Tensor): Weight variances, shape [D_out, D_in]
+        b_var (Tensor): Bias variances, shape [D_out]
+    """
+
     def __init__(self, classifier, w_var, b_var):
         super().__init__()
         
@@ -282,13 +309,33 @@ class SUQ_Classifier_Diag(nn.Module):
         self.b_var = b_var.reshape(self.bias.shape)
     
     def forward(self, x_mean, x_var):
-        
+        """
+        Inputs:
+            x_mean (Tensor): Input mean, shape [B, D]
+            x_var (Tensor): Input variance, shape [B, D]
+
+        Outputs:
+            h_mean (Tensor): Output mean, shape [B, D_out]
+            h_var (Tensor): Output variance, shape [B, D_out]
+        """
         with torch.no_grad():
             h_mean, h_var = forward_aW_diag(x_mean, x_var, self.weight.data, self.bias.data, self.w_var, self.b_var)
         return h_mean, h_var
 
-class SUQ_MLP_Diag(nn.Module):
-    
+class SUQ_TransformerMLP_Diag(nn.Module):
+    """
+    MLP submodule of a transformer block with uncertainty propagation under SUQ.
+
+    Supports both deterministic and Bayesian forward modes with closed-form variance propagation.
+    Used internally in `SUQ_Transformer_Block_Diag`.
+
+    Inputs:
+        MLP (nn.Module): Original MLP submodule
+        determinstic (bool): Whether to treat the MLP weights as deterministic
+        w_fc_var (Tensor, optional): Variance of the first linear layer (if Bayesian)
+        w_proj_var (Tensor, optional): Variance of the second linear layer (if Bayesian)
+    """
+
     def __init__(self, MLP, determinstic = True, w_fc_var = None, w_proj_var = None):
         super().__init__()
 
@@ -299,6 +346,15 @@ class SUQ_MLP_Diag(nn.Module):
             self.w_proj_var = w_proj_var.reshape(self.MLP.c_proj.weight.shape)
 
     def forward(self, x_mean, x_var):
+        """
+        Inputs:
+            x_mean (Tensor): Input mean, shape [B, T, D]
+            x_var (Tensor): Input variance, shape [B, T, D]
+
+        Outputs:
+            h_mean (Tensor): Output mean, shape [B, T, D]
+            h_var (Tensor): Output variance, shape [B, T, D]
+        """
         
         # first fc layer
         with torch.no_grad():
@@ -318,6 +374,18 @@ class SUQ_MLP_Diag(nn.Module):
         return h_mean, h_var
 
 class SUQ_Attention_Diag(nn.Module):
+    """
+    Self-attention module with uncertainty propagation under SUQ.
+
+    Supports deterministic and Bayesian value projections, with optional diagonal covariance assumptions. For details see SUQ paper section A.6
+    Used internally in `SUQ_Transformer_Block_Diag`.
+
+    Inputs:
+        Attention (nn.Module): The original attention module
+        determinstic (bool): Whether to treat value projections as deterministic
+        diag_cov (bool): If True, only compute the diagoanl covariance for value
+        W_v_var (Tensor, optional): Posterior variance for value matrix (if Bayesian)
+    """
     
     def __init__(self, Attention, determinstic = True, diag_cov = False, W_v_var = None):
         super().__init__()
@@ -330,7 +398,16 @@ class SUQ_Attention_Diag(nn.Module):
             self.W_v_var = W_v_var # [D * D]
 
     def forward(self, x_mean, x_var):
-        
+        """
+        Inputs:
+            x_mean (Tensor): Input mean, shape [B, T, D]
+            x_var (Tensor): Input variance, shape [B, T, D]
+
+        Outputs:
+            output_mean (Tensor): Output mean after attention, shape [B, T, D]
+            output_var (Tensor): Output variance after attention, shape [B, T, D]
+        """
+
         with torch.no_grad():
         
             output_mean, attention_score = self.Attention.forward(x_mean, True)
@@ -353,6 +430,25 @@ class SUQ_Attention_Diag(nn.Module):
             return output_mean, output_var
         
 class SUQ_Transformer_Block_Diag(nn.Module):
+    """
+    Single transformer block with uncertainty propagation under SUQ.
+
+    Wraps LayerNorm, attention, and MLP submodules with uncertainty-aware versions.
+    Used in `SUQ_ViT_Diag` to form a full transformer stack.
+
+    Inputs:
+        MLP (nn.Module): Original MLP submodule
+        Attention (nn.Module): Original attention submodule
+        LN_1 (nn.LayerNorm): Pre-attention layer norm
+        LN_2 (nn.LayerNorm): Pre-MLP layer norm
+        MLP_determinstic (bool): Whether to treat MLP as deterministic
+        Attn_determinstic (bool): Whether to treat attention as deterministic
+        diag_cov (bool): If True, only compute the diagoanl covariance for value
+        w_fc_var (Tensor or None): Posterior variance of MLP input projection (if Bayesian)
+        w_proj_var (Tensor or None): Posterior variance of MLP output projection (if Bayesian)
+        W_v_var (Tensor or None): Posterior variance of value matrix (if Bayesian)
+    """
+
     
     def __init__(self, MLP, Attention, LN_1, LN_2, MLP_determinstic, Attn_determinstic, diag_cov = False, w_fc_var = None, w_proj_var = None, W_v_var = None):
         super().__init__()
@@ -360,10 +456,18 @@ class SUQ_Transformer_Block_Diag(nn.Module):
         self.ln_1 = SUQ_LayerNorm_Diag(LN_1)
         self.ln_2 = SUQ_LayerNorm_Diag(LN_2)
         self.attn = SUQ_Attention_Diag(Attention, Attn_determinstic, diag_cov, W_v_var)
-        self.mlp = SUQ_MLP_Diag(MLP, MLP_determinstic, w_fc_var, w_proj_var)
+        self.mlp = SUQ_TransformerMLP_Diag(MLP, MLP_determinstic, w_fc_var, w_proj_var)
 
-    
     def forward(self, x_mean, x_var):
+        """
+        Inputs:
+            x_mean (Tensor): Input mean, shape [B, T, D]
+            x_var (Tensor): Input variance, shape [B, T, D]
+
+        Outputs:
+            h_mean (Tensor): Output mean after transformer block, shape [B, T, D]
+            h_var (Tensor): Output variance after transformer block, shape [B, T, D]
+        """
         
         h_mean, h_var = self.ln_1(x_mean, x_var)
         h_mean, h_var = self.attn(h_mean, h_var)
@@ -381,7 +485,26 @@ class SUQ_Transformer_Block_Diag(nn.Module):
 
 
 class SUQ_ViT_Diag(SUQ_Base):
-    
+    """
+    Vision Transformer model with uncertainty propagation under SUQ, with a diagonal Gaussian posterior.
+
+    Wraps a ViT architecture into a structured uncertainty-aware model by replacing parts
+    of the network with SUQ-compatible blocks. Allows selective Bayesian treatment of MLP
+    and attention modules within each transformer block.
+
+    Currently supports classification only. See the SUQ paper for theoretical background and assumptions.
+
+    Inputs:
+        ViT (nn.Module): A Vision Transformer model structured like `examples/vit_model.py`
+        posterior_variance (Tensor): Flattened posterior variance vector
+        MLP_determinstic (bool): Whether MLP submodules are treated as deterministic
+        Attn_determinstic (bool): Whether attention submodules are treated as deterministic
+        scale_init (float, optional): Initial value for the scale factor
+        attention_diag_cov (bool): If True, only compute the diagoanl covariance for value
+        likelihood (str): Currently only support 'Classification'
+        num_det_blocks (int): Number of transformer blocks to leave deterministic (from the bottom up)
+    """
+
     def __init__(self, ViT, posterior_variance, MLP_determinstic, Attn_determinstic, scale_init = 1.0, attention_diag_cov = False, likelihood = 'clasification', num_det_blocks = 10):
         super().__init__(likelihood, scale_init)
         
@@ -441,36 +564,23 @@ class SUQ_ViT_Diag(SUQ_Base):
 
         num_param_classifier_weight = ViT.classifier.weight.numel()
         self.classifier = SUQ_Classifier_Diag(ViT.classifier, posterior_variance[index: index + num_param_classifier_weight], posterior_variance[index + num_param_classifier_weight:])
-    
-    def forward(self, pixel_values, interpolate_pos_encoding = None):
-        device = pixel_values.device
-
-        x_mean = self.transformer.pte(
-            pixel_values, interpolate_pos_encoding=interpolate_pos_encoding
-        )
-        
-        # pass through model
-        x_var = torch.zeros_like(x_mean, device = device)
-        
-        for i, block in enumerate(self.transformer.h):
-            
-            if isinstance(block, SUQ_Transformer_Block_Diag):
-
-                x_mean, x_var = block(x_mean, x_var)
-                
-            else:
-                x_mean = block(x_mean)
-        
-        x_mean, x_var = self.transformer.ln_f(x_mean, x_var)
-        
-        x_mean, x_var = self.classifier(x_mean[:, 0, :], x_var[:, 0, :])
-        
-        x_var = x_var / self.scale_factor.to(device)
-        kappa = 1 / torch.sqrt(1. + np.pi / 8 * x_var)
-        
-        return torch.softmax(kappa * x_mean, dim=-1)
 
     def forward_latent(self, pixel_values, interpolate_pos_encoding = None):
+        
+        """
+        Compute the predictive mean and variance of the ViT's latent output before applying the final likelihood layer.
+
+        Traverses the full transformer stack with uncertainty propagation.
+
+        Inputs:
+            pixel_values (Tensor): Input image tensor, shape [B, C, H, W]
+            interpolate_pos_encoding (optional): Optional positional embedding interpolation
+
+        Outputs:
+            x_mean (Tensor): Predicted latent mean at the [CLS] token, shape [B, D]
+            x_var (Tensor): Predicted latent variance at the [CLS] token, shape [B, D]
+        """
+
         device = pixel_values.device
 
         x_mean = self.transformer.pte(
@@ -494,3 +604,24 @@ class SUQ_ViT_Diag(SUQ_Base):
         x_var = x_var / self.scale_factor.to(device)
         
         return x_mean, x_var
+
+    def forward(self, pixel_values, interpolate_pos_encoding = None):
+        """
+        Compute predictive class probabilities using a probit approximation.
+
+        Performs a full forward pass through the ViT with uncertainty propagation, and
+        produces softmax-normalized class probabilities for classification.
+
+        Inputs:
+            pixel_values (Tensor): Input image tensor, shape [B, C, H, W]
+            interpolate_pos_encoding (optional): Optional positional embedding interpolation
+
+        Outputs:
+            Tensor: Predicted class probabilities, shape [B, num_classes]
+        """
+
+        x_mean, x_var = self.forward_latent(pixel_values, interpolate_pos_encoding)
+        kappa = 1 / torch.sqrt(1. + np.pi / 8 * x_var)
+        
+        return torch.softmax(kappa * x_mean, dim=-1)
+

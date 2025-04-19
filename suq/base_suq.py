@@ -11,6 +11,18 @@ from suq.utils.utils import torch_dataset
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class SUQ_Base(nn.Module):
+    """
+    Base class for SUQ models.
+
+    Provides core functionality for:
+    - Managing likelihood type (regression or classification)
+    - Probit-based approximation for classification
+    - NLPD-based fitting of the scale factor
+
+    Inputs:
+        likelihood (str): Either 'classification' or 'regression'
+        scale_init (float): Initial value for the scale factor parameter
+    """
     
     def __init__(self, likelihood, scale_init):
         super().__init__()
@@ -22,7 +34,17 @@ class SUQ_Base(nn.Module):
         self.scale_factor = nn.Parameter(torch.Tensor([scale_init]).to(device))
     
     def probit_approximation(self, out_mean, out_var):
+        """
+        Applies a probit approximation to compute class probabilities from the latent Gaussian distribution.
         
+        Inputs:
+            out_mean (Tensor): Latent function mean, shape [B, C]
+            out_var (Tensor): Latent function variance, shape [B, C] or [B, C, C]
+
+        Outputs:
+            posterior_predict_mean (Tensor): Predicted class probabilities, shape [B, C]
+        """
+
         if out_var.dim() == 3:
             kappa = 1 / torch.sqrt(1. + np.pi / 8 * out_var.diagonal(dim1=1, dim2=2))
         else:
@@ -32,6 +54,19 @@ class SUQ_Base(nn.Module):
         return posterior_predict_mean
 
     def fit_scale_factor(self, data_loader, n_epoches, lr, speedup = True, verbose = False):
+        """
+        Fits the scale factor for predictive variance using negative log predictive density (NLPD).
+
+        Inputs:
+            data_loader (DataLoader): Dataloader containing (input, target) pairs
+            n_epoches (int): Number of epochs for optimization
+            lr (float): Learning rate for scale optimizer
+            speedup (bool): If True (classification only), caches forward pass outputs to accelerate fitting
+            verbose (bool): If True, prints NLPD at each epoch
+
+        Outputs:
+            total_train_nlpd (List[float]): Average NLPD per epoch over training data
+        """
         print("fit scale factor")
         optimizer = torch.optim.Adam([self.scale_factor], lr)
         total_train_nlpd = []

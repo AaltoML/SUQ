@@ -81,7 +81,16 @@ def forward_batch_norm_diag(h_var, bn_weight, bn_running_var, bn_eps):
     return output_var
 
 class SUQ_Linear_Diag(nn.Module):
+    """
+    Linear layer with uncertainty propagation under SUQ, with a diagonal Gaussian posterior.
+    
+    Wraps a standard `nn.Linear` layer and applies closed-form mean and variance propagation. See the SUQ paper for theoretical background and assumptions.
 
+    Inputs:
+        org_linear (nn.Linear): The original linear layer to wrap
+        w_var (Tensor): Weight variances, shape [D_out, D_in]
+        b_var (Tensor): Bias variances, shape [D_out]
+    """
     def __init__(self, org_linear, w_var, b_var):
         super().__init__()
         
@@ -91,6 +100,15 @@ class SUQ_Linear_Diag(nn.Module):
         self.b_var = b_var
     
     def forward(self, a_mean, a_var): 
+        """
+        Inputs:
+            a_mean (Tensor): Input mean, shape [N, D_in]
+            a_var (Tensor): Input variance, shape [N, D_in]
+
+        Outputs:
+            h_mean (Tensor): Output mean, shape [N, D_out]
+            h_var (Tensor): Output variance, shape [N, D_out]
+        """
         
         if a_var == None:
             a_var = torch.zeros_like(a_mean).to(a_mean.device)
@@ -100,16 +118,41 @@ class SUQ_Linear_Diag(nn.Module):
         return h_mean, h_var
 
 class SUQ_Activation_Diag(nn.Module):
+    """
+    Activation layer with closed-form uncertainty propagation under SUQ, with a diagonal Gaussian posterior.
+
+    Wraps a standard activation function and applies a first-order approximation to propagate input variance through the nonlinearity. See the SUQ paper for theoretical background and assumptions.
+
+    Inputs:
+        afun (Callable): A PyTorch activation function (e.g. nn.ReLU())
+    """
     
     def __init__(self, afun):        
         super().__init__()
         self.afun = afun
     
     def forward(self, h_mean, h_var):
+        """
+        Inputs:
+            h_mean (Tensor): Input mean before activation, shape [N, D]
+            h_var (Tensor): Input variance before activation, shape [N, D]
+
+        Outputs:
+            a_mean (Tensor): Activated output mean, shape [N, D]
+            a_var (Tensor): Approximated output variance, shape [N, D]
+        """
         a_mean, a_var = forward_activation_implicit_diag(self.afun, h_mean, h_var)
         return a_mean, a_var
 
 class SUQ_BatchNorm_Diag(nn.Module):
+    """
+    BatchNorm layer with closed-form uncertainty propagation under SUQ, with a diagonal Gaussian posterior.
+
+    Wraps `nn.BatchNorm1d` and adjusts input variance using batch normalization statistics and scale parameters. See the SUQ paper for theoretical background and assumptions.
+
+    Inputs:
+        BatchNorm (nn.BatchNorm1d): The original batch norm layer
+    """
     
     def __init__(self, BatchNorm):
         super().__init__()
@@ -117,6 +160,15 @@ class SUQ_BatchNorm_Diag(nn.Module):
         self.BatchNorm = BatchNorm
     
     def forward(self, x_mean, x_var):
+        """
+        Inputs:
+            x_mean (Tensor): Input mean, shape [B, D]
+            x_var (Tensor): Input variance, shape [B, D]
+
+        Outputs:
+            out_mean (Tensor): Output mean after batch normalization, shape [B, D]
+            out_var (Tensor): Output variance after batch normalization, shape [B, D]
+        """
         
         with torch.no_grad():
         
@@ -127,15 +179,46 @@ class SUQ_BatchNorm_Diag(nn.Module):
 
 
 class SUQ_MLP_Diag(SUQ_Base):
+    """
+    Multilayer perceptron model with closed-form uncertainty propagation under SUQ, with a diagonal Gaussian posterior.
+
+    Wraps a standard MLP, converting its layers into SUQ-compatible components.
+    Supports both classification and regression via predictive Gaussian approximation.
+    
+    Note:
+        The input model should correspond to the latent function only:
+        - For regression, this is the full model (including final output layer).
+        - For classification, exclude the softmax layer and pass only the logit-producing part.
+
+    Inputs:
+        org_model (nn.Module): The original MLP model to convert
+        posterior_variance (Tensor): Flattened posterior variance vector
+        likelihood (str): Either 'classification' or 'regression'
+        scale_init (float, optional): Initial scale factor
+        sigma_noise (float, optional): noise level (for regression)
+    """
+    
     def __init__(self, org_model, posterior_variance, likelihood, scale_init = 1.0, sigma_noise = None):
         super().__init__(likelihood, scale_init)
-        """
-        only take in the model that corresponds to the latent function part (in regression case it's the whole network, in classification case remove the softmax layer)
-        """
+
         self.sigma_noise = sigma_noise
         self.convert_model(org_model, posterior_variance)
     
     def forward_latent(self, data, out_var = None):
+        """
+        Compute the predictive mean and variance of the latent function before applying the likelihood.
+
+        Traverses the model layer by layer, propagating mean and variance through each SUQ-wrapped layer.
+
+        Inputs:
+            data (Tensor): Input data, shape [B, D]
+            out_var (Tensor or None): Optional input variance, shape [B, D]
+
+        Outputs:
+            out_mean (Tensor): Output mean after final layer, shape [B, D_out]
+            out_var (Tensor): Output variance after final layer, shape [B, D_out]
+        """
+        
         out_mean = data
         
         if isinstance(self.model, nn.Sequential):
@@ -148,6 +231,21 @@ class SUQ_MLP_Diag(SUQ_Base):
         return out_mean, out_var
     
     def forward(self, data):
+        """
+        Compute the predictive distribution based on the model's likelihood setting.
+
+        For classification, use probit-approximation.
+        For regression, returns the latent mean and total predictive variance.
+
+        Inputs:
+            data (Tensor): Input data, shape [B, D]
+
+        Outputs:
+            If classification:
+                Tensor: Class probabilities, shape [B, num_classes]
+            If regression:
+                Tuple[Tensor, Tensor]: Output mean and total variance, shape [B, D_out]
+        """
         
         out_mean, out_var = self.forward_latent(data)
 
@@ -159,9 +257,14 @@ class SUQ_MLP_Diag(SUQ_Base):
             return out_mean, out_var + self.sigma_noise ** 2
     
     def convert_model(self, org_model, posterior_variance):
-        
         """
-        take the torch model and its corresponding posterior, convert it into Bayesian version
+        Converts a deterministic MLP into a SUQ-compatible model with diagonal posterior.
+
+        Each layer is replaced with its corresponding SUQ module (e.g. linear, activation, batchnorm), using the provided flattened posterior variance vector.
+
+        Inputs:
+            org_model (nn.Module): The original model to convert (latent function only)
+            posterior_variance (Tensor): Flattened posterior variance for Bayesian parameters
         """
         
         p_model = copy.deepcopy(org_model)
