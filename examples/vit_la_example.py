@@ -15,7 +15,7 @@ from vit_model import ViT_Classification, GPTConfig
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument("--load_checkpoint", type=int, default = 1, help="whether train from scratch")
+parser.add_argument("--load_checkpoint", type=int, default = 0, help="whether train from scratch")
 args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -134,6 +134,8 @@ else:
         model.load_state_dict(torch.load(f'{dataset_name}_vit_attn.pt'))
     else:
         model.load_state_dict(torch.load(f'{dataset_name}_vit_mlp.pt'))
+
+model.eval()
 
 total_acc = []
 with torch.no_grad():

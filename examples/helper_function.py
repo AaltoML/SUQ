@@ -1,5 +1,28 @@
 import torch
 from tqdm import tqdm
+import torch.nn as nn
+
+def create_mlp(layer_list, act_func, task):
+    
+    model = nn.Sequential()
+    
+    for i in range(len(layer_list) - 1):
+        model.append(nn.Linear(layer_list[i], layer_list[i+1]))
+        if act_func == 'relu':
+            model.append(nn.ReLU())
+        
+        if act_func == 'tanh':
+            model.append(nn.Tanh())
+    
+    if task == 'classification':
+        # replace last activation into softmax
+        model[-1] = nn.Softmax()
+    
+    if task == 'regression':
+        # no explicit activation for regression
+        model = model[:-1]
+    
+    return model
 
 def eval_vit_performance(model, data_loader, device, full_dataset = False):
     model.eval()

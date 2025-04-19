@@ -6,13 +6,14 @@ from laplace import Laplace
 from prepare_dataset import load_mnist
 from tqdm import tqdm
 from suq import streamline_mlp
+from helper_function import create_mlp
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 data_dir = './'
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument("--load_checkpoint", type=int, default = 1, help="whether train from scratch")
+parser.add_argument("--load_checkpoint", type=int, default = 0, help="whether train from scratch")
 args = parser.parse_args()
 
 ##################################### set hyperparameters #####################################
@@ -20,28 +21,6 @@ batch_size, lr, weight_decay, n_epoch, network_structure = [64, 1e-3, 1e-5, 15, 
 ##################################### dataset loader #####################################
 train_loader, test_loader = load_mnist(batch_size, data_dir)
 ##################################### define model #####################################
-def create_mlp(layer_list, act_func, task):
-    
-    model = nn.Sequential()
-    
-    for i in range(len(layer_list) - 1):
-        model.append(nn.Linear(layer_list[i], layer_list[i+1]))
-        if act_func == 'relu':
-            model.append(nn.ReLU())
-        
-        if act_func == 'tanh':
-            model.append(nn.Tanh())
-    
-    if task == 'classification':
-        # replace last activation into softmax
-        model[-1] = nn.Softmax()
-    
-    if task == 'regression':
-        # no explicit activation for regression
-        model = model[:-1]
-    
-    return model
-
 model = create_mlp(network_structure, 'relu', 'classification')
 model.to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
