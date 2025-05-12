@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="suq_logo.png" alt="image" width="500"/>
+</p>
+
+
+
 # SUQ: Streamlined Uncertainty Quantification
 
 ![image](suq.png)
