@@ -6,8 +6,6 @@
 
 # SUQ: Streamlined Uncertainty Quantification
 
-![image](suq.png)
-
 This repository contains an open-source library implementation of Streamlined Uncertainty Quantification (SUQ) used in the paper *Streamlining Prediction in Bayesian Deep Learning* accepted at ICLR 2025.
 
 <table>
