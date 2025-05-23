@@ -9,18 +9,26 @@ from suq.base_suq import SUQ_Base
 
 def forward_aW_diag(a_mean, a_var, weight, bias, w_var, b_var):
     """
-    compute mean and covariance of h = a @ W^T + b when posterior has diag covariance
+    Compute mean and covariance of `h = a @ W^T + b` when the posterior has diagonal covariance.
     
-    ----- Input -----
-    a_mean: [N, D_in] mean(a)
-    a_var: [N, D_in] a_var[i] = var(a_i)
-    weight: [D_out, D_in] W
-    bias: [D_out, ] b
-    b_var: [D_out, ] b_var[k]: var(b_k)
-    w_var: [D_out, D_in] w_cov[k][i]: var(w_ki)
-    ----- Output -----
-    h_mean: [N, D_out]
-    h_var: [N, D_out] h_var[k] = var(h_k)
+    Args:
+        a_mean: Mean of `a` assuming `a` is `[N, D_in]`.
+        a_var: [N, D_in] 
+                Element wise variance of `a`
+        weight: [D_out, D_in]
+                Weights of the layer.
+        bias: [D_out, ]
+                Bias of the layer.
+        b_var: [D_out, ] 
+                Element wise variance of the bias.
+        w_var: [D_out, D_in]
+                Element wise variance of the weights.
+    
+    Returns: 
+        h_mean: [N, D_out]
+                Mean of the pre-activations.
+        h_var: [N, D_out]
+                Element wise variance of the pre-activations.
     """
     
     # calculate mean(h)

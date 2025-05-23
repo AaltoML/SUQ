@@ -15,13 +15,14 @@ class SUQ_Base(nn.Module):
     Base class for SUQ models.
 
     Provides core functionality for:
+
     - Managing likelihood type (regression or classification)
     - Probit-based approximation for classification
     - NLPD-based fitting of the scale factor
 
-    Inputs:
-        likelihood (str): Either 'classification' or 'regression'
-        scale_init (float): Initial value for the scale factor parameter
+    Args:
+        likelihood (str): Either `classification` or `regression`.
+        scale_init (float): Initial value for the scale factor parameter.
     """
     
     def __init__(self, likelihood, scale_init):

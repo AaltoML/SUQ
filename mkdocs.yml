@@ -1,0 +1,29 @@
+site_name: SUQ.jl
+site_url: https://AaltoML.github.io/SUQ # change this
+
+repo_url: https://github.com/AaltoML/SUQ
+repo_name: AaltoML/SUQ
+
+theme:
+  name: material
+  language: en
+  icon:
+    repo: fontawesome/brands/github  # optional, for GitHub icon
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+
+plugins:
+  - search
+  - mkdocstrings
+
+nav:
+  - Home: index.md
+  - API Reference: reference.md
+
