@@ -38,12 +38,12 @@ class SUQ_Base(nn.Module):
         """
         Applies a probit approximation to compute class probabilities from the latent Gaussian distribution.
         
-        Inputs:
-            out_mean (Tensor): Latent function mean, shape [B, C]
-            out_var (Tensor): Latent function variance, shape [B, C] or [B, C, C]
+        Args:
+            out_mean (Tensor): Latent function mean, shape [B, num_classes]
+            out_var (Tensor): Latent function variance, shape [B, num_classes] or [B, num_classes, num_classes]
 
-        Outputs:
-            posterior_predict_mean (Tensor): Predicted class probabilities, shape [B, C]
+        Returns:
+            posterior_predict_mean (Tensor): Predicted class probabilities, shape [B, num_classes]
         """
 
         if out_var.dim() == 3:
@@ -58,14 +58,14 @@ class SUQ_Base(nn.Module):
         """
         Fits the scale factor for predictive variance using negative log predictive density (NLPD).
 
-        Inputs:
+        Args:
             data_loader (DataLoader): Dataloader containing (input, target) pairs
             n_epoches (int): Number of epochs for optimization
             lr (float): Learning rate for scale optimizer
             speedup (bool): If True (classification only), caches forward pass outputs to accelerate fitting
             verbose (bool): If True, prints NLPD at each epoch
 
-        Outputs:
+        Returns:
             total_train_nlpd (List[float]): Average NLPD per epoch over training data
         """
         print("fit scale factor")
