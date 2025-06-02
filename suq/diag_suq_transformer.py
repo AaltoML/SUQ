@@ -7,22 +7,22 @@ from suq.base_suq import SUQ_Base
 
 def forward_linear_diag_Bayesian_weight(e_mean, e_var, w_mean, w_var, bias = None):
     """
-    Pass a distribution with diagonal covariance through a Bayesian linear layer with diagonal covariance
-
-    Given e ~ N(e_mean, e_cov), W ~ N(W_mean, W_cov), calculate the mean and variance h = eW.T + b.
+    Compute the mean and element-wise variance of `h = e @ W^T + b` when `e ~ N(e_mean, e_var)` and `W ~ N(w_mean, w_var)`
     
-    We only make the weight Bayesian, bias is treated determinstically
-
-    Note that as we always assume the input to next layer has diagonal covariance, so we only compute the variance over h here.
+    Note:
+        - We only make the weight Bayesian, bias is treated determinstically
+        - We always assume the input to next layer has diagonal covariance, so we only compute the variance over `h` here.
     
-    Input
-        e_mean: [B, T, D_in] embedding mean
-        e_var: [B, T, D_in] embedding variance
-        w_mean: [D_out, D_in] weight mean
-        w_var: [D_out, D_in] weight covariance, w_cov[k][i]: var(w_ki)
-    Output
-        h_mean: [B, T, D_out]
-        h_var: [B, T, D_out] h_var[k] = var(h_k)
+    Args:
+        e_mean (Tensor): Mean of the input embeddings `e`. Shape: `[B, T, D_in]`
+        e_var (Tensor): Element-wise variance of the input embeddings `e`. Shape: `[B, T, D_in]`
+        w_mean (Tensor): Mean of the weights `W`. Shape: `[D_out, D_in]`
+        w_var (Tensor): Element-wise variance of the weights `W`. Shape: `[D_out, D_in]`
+        bias (Tensor, optional): Bias term `b`. Shape: `[D_out,]`
+
+    Returns:
+        h_mean (Tensor): Mean of the output `h`. Shape: `[B, T, D_out]`
+        h_var (Tensor): Element-wise variance of the output `h`. Shape: `[B, T, D_out]`
     """
 
     # calculate mean(h)
@@ -36,19 +36,20 @@ def forward_linear_diag_Bayesian_weight(e_mean, e_var, w_mean, w_var, bias = Non
 
 def forward_linear_diag_determinstic_weight(e_mean, e_var, weight, bias = None):
     """
-    Pass a distribution with diagonal covariance through a linear layer
-
-    Given e ~ N(e_mean, e_var) and determinstic weight W and bias b, calculate the mean and variance h = eW.T + b.
+    Compute the mean and element-wise variance of `h = e @ W^T + b` when `e ~ N(e_mean, e_var)`, `W` and `b` are both determinstic
     
-    Note that as we always assume the input to next layer has diagonal covariance, so we only compute the variance over h here.
+    Note:
+        - We always assume the input to next layer has diagonal covariance, so we only compute the variance over `h` here.
     
-    Input
-        e_mean: [B, T, D_in] embedding mean
-        e_var: [B, T, D_in] embedding variance
-        w_mean: [D_out, D_in] weight 
-    Output
-        h_mean: [B, T, D_out]
-        h_var: [B, T, D_out] h_var[k] = var(h_k)
+    Args:
+        e_mean (Tensor): Mean of the input embeddings `e`. Shape: `[B, T, D_in]`.
+        e_var (Tensor): Element-wise variance of the input embeddings `e`. Shape: `[B, T, D_in]`.
+        weight (Tensor): Weights `W`. Shape: `[D_out, D_in]`.
+        bias (Tensor, optional): Bias term `b`. Shape: `[D_out,]`.
+        
+    Returns:
+        h_mean (Tensor): Mean of the output `h`. Shape: `[B, T, D_out]`
+        h_var (Tensor): Element-wise variance of the output `h`. Shape: `[B, T, D_out]`
     """
     
     h_mean = F.linear(e_mean, weight, bias)
@@ -59,20 +60,18 @@ def forward_linear_diag_determinstic_weight(e_mean, e_var, weight, bias = None):
 @torch.enable_grad()
 def forward_activation_diag(activation_func, h_mean, h_var):
     """
-    Pass a distribution with diagonal covariance through an activation layer. 
+    Approximate the distribution of `a = g(h)` given `h ~ N(h_mean, h_var)`, where `h_var` 
+    is the element-wise variance of pre-activation `h`.
+    Uses a first-order Taylor expansion: `a ~ N(g(h_mean), g'(h_mean)^T @ h_var @ g'(h_mean))`.
+    
+    Args:
+        activation_func (Callable): A PyTorch activation function `g(·)` (e.g. `nn.ReLU()`)
+        h_mean (Tensor): Mean of the pre-activations `h`. Shape: `[B, T, D]`
+        h_var (Tensor): Element-wise variance of the pre-activations `h`. Shape: `[B, T, D]`
 
-    Given h ~ N(h_mean, h_cov), g(·), where h_cov is a diagonal matrix,
-    approximate the distribution of a = g(h) as 
-    a ~ N(g(h_mean), g'(h_mean)^T h_var g'(h_mean))
-    
-    Input
-        activation_func: g(·)
-        h_mean: [B, T, D] input mean
-        h_var: [B, T, D] input variance
-    
-    Output
-        a_mean: [B, T, D]
-        a_var: [B, T, D]
+    Returns:
+        a_mean (Tensor): Mean of the activations `a`. Shape: `[B, T, D]`
+        a_var (Tensor): Element-wise variance of the activations `a`. Shape: `[B, T, D]`
     """
 
     h_mean_grad = h_mean.detach().clone().requires_grad_()
@@ -88,16 +87,17 @@ def forward_activation_diag(activation_func, h_mean, h_var):
     
 def forward_layer_norm_diag(e_mean, e_var, ln_weight, ln_eps):
     """
-    Pass a distribution with diagonal covariance through LayerNorm layer
+    Compute the output variance when a distribution `e ~ N(e_mean, e_var)`
+    is passed through a LayerhNorm layer.
     
-    Input
-        e_mean: mean of input distribution [B, T, D]
-        e_var: variance of input distribution [B, T, D]
-        ln_weight: layer norm scale factor
-        ln_eps: layer norm eps
-    
-    Output
-        output_var [B, T, D]
+    Args:
+        e_mean (Tensor): Mean of the input distribution. Shape: `[B, T, D]`
+        e_var (Tensor): Element-wise variance of the input distribution. Shape: `[B, T, D]`
+        ln_weight (Tensor): LayerNorm scale factor (gamma). Shape: `[D,]`
+        ln_eps (float): Small constant added for numerical stability.
+
+    Returns:
+        output_var (Tensor): Element-wise variance after LayerNorm. Shape: `[B, T, D]`
     """
 
     # calculate the var
@@ -107,31 +107,32 @@ def forward_layer_norm_diag(e_mean, e_var, ln_weight, ln_eps):
     
     return output_var
 
-def forward_value_cov_Bayesian_W(W_v, W_v_var, input_mean, input_var, n_h, D_v, diag_cov = False):
+def forward_value_cov_Bayesian_W(W_v, W_v_var, e_mean, e_var, n_h, D_v, diag_cov = False):
     """
-    Given value matrix W_v ~ N(mean(W), var(W)) and input E ~ N(mean(E), var(E))
-    Compute the covariance of output v = W_v @ E 
+    Given value weight W_v ~ N(W_v, W_v_var) and input E ~ N(e_mean, e_var)
+    Compute the covariance of output `v = W_v @ E `
+    
+    Args:
+        n_h (int): Number of attention heads.
+        D_v (int): Dimension per head. Must satisfy `n_h * D_v = D`
+        W_v (Tensor): Mean of the value weight `W_v`. Shape: `[D, D]`
+        W_v_var (Tensor): Element-wise variance of the value weight `W_v`. Shape: `[D, D]`
+        e_mean (Tensor): Mean of the input embeddings `e`. Shape: `[B, T, D]`
+        e_var (Tensor): Element-wise variance of the input embeddings `e`. Shape: `[B, T, D]`
+        diag_cov (bool): If `True`, only compute and return diagonal of the output covariance.
 
-    Input: 
-        n_h: number of attention heads
-        D_v: dimension of value, n_h * D_v = D
-        W_v: value weight matrix [D, D]
-        W_v_var: variance of value matrix, [D, D]
-        input_mean: mean of input [B, T, D]
-        input_var: variance of input variance [B, T, D]
-        diag_cov: whether input only has diag covariance
-        
-    Output:
-        v_cov [B, T, n_h, D_v, D_v] or v_var [B, T, n_h, D_v]
+    Returns:
+        v_var (Tensor): Returned if `diag_cov=True`. Element-wise variance of the output `v`.  Shape: `[B, T, n_h, D_v]`
+        v_cov (Tensor): Returned if `diag_cov=False`. Full covariance matrices of the output `v`.  Shape: `[B, T, n_h, D_v, D_v]`
     """
 
-    B, T, D = input_var.size()
+    B, T, D = e_var.size()
 
     if not diag_cov:
         ## compute general covariance 
         W_v_reshaped = W_v.reshape(1, 1, n_h, D_v, D) 
             # [D, D] -> [1, 1, n_h, D_v, D]
-        input_var_reshaped = input_var.reshape(B, T, 1, 1, D)
+        input_var_reshaped = e_var.reshape(B, T, 1, 1, D)
             # [B, T, D] -> [B, T, 1, 1, D]
         v_cov = (W_v_reshaped * input_var_reshaped).transpose(3, 4)
             # [1, 1, n_h, D_v, D] * [B, T, 1, 1, D] -> [B, T, n_h, D_v, D] -> [B, T, n_h, D, D_v]
@@ -141,7 +142,7 @@ def forward_value_cov_Bayesian_W(W_v, W_v_var, input_mean, input_var, n_h, D_v, 
         ## add missing part for variance
         W_v_var_reshaped = W_v_var.reshape(1, 1, n_h, D_v, D) 
             #[D, D] -> [1, 1, n_h, D_v, D]
-        input_var_plus_mean_square = input_var_reshaped + input_mean.reshape(B, T, 1, 1, D)**2 #[B, T, 1, 1, D]
+        input_var_plus_mean_square = input_var_reshaped + e_mean.reshape(B, T, 1, 1, D)**2 #[B, T, 1, 1, D]
         extra_var_term = torch.sum(input_var_plus_mean_square * W_v_var_reshaped, dim=[4]) # [B, T, n_h, D_v, D] -> [B, T, n_h, D_v]
         v_cov = v_cov + torch.diag_embed(extra_var_term) 
 
@@ -149,33 +150,34 @@ def forward_value_cov_Bayesian_W(W_v, W_v_var, input_mean, input_var, n_h, D_v, 
 
     else:
         weight_mean2_var_sum = W_v **2 + W_v_var # [D, D]
-        v_var = input_mean **2 @ W_v_var.T + input_var @ weight_mean2_var_sum.T # [B, T, D]
+        v_var = e_mean **2 @ W_v_var.T + e_var @ weight_mean2_var_sum.T # [B, T, D]
     
         return v_var.reshape(B, T, n_h, D_v)
 
-def forward_value_cov_determinstic_W(W_v, input_var, n_h, D_v, diag_cov = False):
+def forward_value_cov_determinstic_W(W_v, e_var, n_h, D_v, diag_cov = False):
     """
-    Given determinstic value matrix W_v and input E ~ N(mean(E), var(E))
-    Compute the covariance of output v = W_v @ E 
+    Given determinstic value weight W_v and input E ~ N(e_mean, e_var)
+    Compute the covariance of output `v = W_v @ E`
 
-    
-    Input: 
-        n_h: number of attention heads
-        D_v: dimension of value, n_h * D_v = D
-        W_v: value weight matrix [D, D], which can be reshaped into [n_h, D_v, D]
-        input_var: variance of input variance [B, T, D]
-        diag_cov: whether input only has diag covariance
-        
-    Output:
-        v_cov [B, T, n_h, D_v, D_v] or v_var [B, T, n_h, D_v]
+    Args:
+        n_h (int): Number of attention heads.
+        D_v (int): Dimension per head. Must satisfy `n_h * D_v = D`
+        W_v (Tensor): Value weight `W_v`. Shape: `[D, D]`
+        e_var (Tensor): Element-wise variance of the input embeddings `e`. Shape: `[B, T, D]`
+        diag_cov (bool): If `True`, only compute and return diagonal of the output covariance.
+
+    Returns:
+        v_var (Tensor): Returned if `diag_cov=True`. Element-wise variance of the output `v`.  Shape: `[B, T, n_h, D_v]`
+        v_cov (Tensor): Returned if `diag_cov=False`. Full covariance matrices of the output `v`.  Shape: `[B, T, n_h, D_v, D_v]`
+
     """
 
-    B, T, D = input_var.size()
+    B, T, D = e_var.size()
 
     if not diag_cov:
         W_v_reshaped = W_v.reshape(1, 1, n_h, D_v, D) 
             #[n_h, D_v, D] -> [1, 1, n_h, D_v, D]
-        input_var_reshaped = input_var.reshape(B, T, 1, 1, D)
+        input_var_reshaped = e_var.reshape(B, T, 1, 1, D)
             # [B, T, D] -> [B, T, 1, 1, D]
         v_cov = (W_v_reshaped * input_var_reshaped).transpose(3, 4)
             # [1, 1, n_h, D_v, D] * [B, T, 1, 1, D] -> [B, T, n_h, D_v, D] -> [B, T, n_h, D, D_v]
@@ -185,22 +187,23 @@ def forward_value_cov_determinstic_W(W_v, input_var, n_h, D_v, diag_cov = False)
         return v_cov
     
     else:
-        v_var = input_var @ (W_v ** 2).T
+        v_var = e_var @ (W_v ** 2).T
 
         return v_var.reshape(B, T, n_h, D_v)
     
 def forward_QKV_cov(attention_score, v_cov, diag_cov = False):
     """
-    given attention score (QK^T) and V ~ N(mean(V), cov(V))
-    compute the covariance of output E = (QK^T) V
+    Given attention score (QK^T) and `V ~ N(v_mean, v_cov)`
+    Compute the covariance of output `E = (QK^T) V`
     
-    Input:
-        attention_score: [B, n_h, T, T] attention_score[t] is token t's attention score for all other tokens
-        v_cov: [B, T, n_h, D_v, D_v] or [B, T, n_h, D_v], covariance of value
-        diag_cov: whether input only has diag covariance
-        
-    Output:
-        QKV_cov: [B, n_h, T, D_v, D_v] or [B, T, n_h, D_v], covariance of output E
+    Args:
+        attention_score (Tensor): Attention weights `A = QK^T`. Shape: `[B, n_h, T, T]`
+        v_cov (Tensor): Covariance of the value `V`.  Shape: `[B, T, n_h, D_v, D_v]` if `diag_cov=False`. `[B, T, n_h, D_v]` if `diag_cov=True`
+        diag_cov (bool): If `True`, value `V` will have diagonal covariance
+
+    Returns:
+        QKV_var (Tensor): Returned if `diag_cov=True`. Element-wise variance of the output `E`. Shape: `[B, T, n_h, D_v]`
+        QKV_cov (Tensor): Returned if `diag_cov=False`. Full covariance matrices of the output `E`. Shape: `[B, n_h, T, D_v, D_v]`
     """
     if diag_cov:
         B, T, n_h, D_v = v_cov.size()
@@ -220,16 +223,16 @@ def forward_QKV_cov(attention_score, v_cov, diag_cov = False):
 
 def forward_fuse_multi_head_cov(QKV_cov, project_W, diag_cov = False):
     """
-    given concatanated multi-head embedding E ~ N(mean(E), cov(E)) and project weight matrix W
-    compute variance of each output dimenison
+    Given concatanated multi-head embedding `E ~ N(e_mean, e_cov)` and the determinstic projection weight matrix `W`
+    Compute variance of each output dimenison 
     
-    Input:
-        QKV_cov: [B, n_h, T, D_v, D_v] or [B, n_h, T, D_v]
-        project_W: [D, D]  D_out x D_in (n_h * D_v)
-        diag_cov: whether input only has diag covariance
+    Args:
+        QKV_cov (Tensor): Covariance of the concatenated multi-head output `E`.  Shape: `[B, T, n_h, D_v, D_v]` if `diag_cov=False`. `[B, T, n_h, D_v]` if `diag_cov=True`
+        project_W (Tensor): Projection weight matrix `W`. Shape: `[D_out, D_in]`, where `D_in = n_h * D_v`
+        diag_cov (bool): If `True`, `QKV_cov` will have diagonal covariance
         
-    Output: 
-        output_var [B, T, D]
+    Returns: 
+        output_var (Tensor): Element-wise variance of the projected output. Shape: `[B, T, D_out]`
     """
     if diag_cov:
         B, n_h, T, D_v = QKV_cov.size()
@@ -260,7 +263,7 @@ class SUQ_LayerNorm_Diag(nn.Module):
 
     Wraps `nn.LayerNorm` and propagates input variance analytically using running statistics. See the SUQ paper for theoretical background and assumptions.
 
-    Inputs:
+    Args:
         LayerNorm (nn.LayerNorm): The original layer norm module to wrap
     """
 
@@ -271,14 +274,17 @@ class SUQ_LayerNorm_Diag(nn.Module):
     
     def forward(self, x_mean, x_var):
         """
-        Inputs:
-            x_mean (Tensor): Input mean, shape [B, T, D]
-            x_var (Tensor): Input variance, shape [B, T, D]
+        Forward pass with uncertainty propagation through a SUQ LayerNorm layer.
+        
+        Args:
+            x_mean (Tensor): Input mean. Shape: [B, T, D]
+            x_var (Tensor): Input element-wise variance. Shape: [B, T, D]
 
-        Outputs:
-            out_mean (Tensor): Output mean after layer norm, shape [B, T, D]
-            out_var (Tensor): Output variance after layer norm, shape [B, T, D]
+        Returns:
+            out_mean (Tensor): Output mean after layer normalization. Shape: [B, T, D]
+            out_var (Tensor): Output element-wise variance after layer normalization. Shape: [B, T, D]
         """
+        
         with torch.no_grad():
         
             out_mean = self.LayerNorm.forward(x_mean)
@@ -294,10 +300,10 @@ class SUQ_Classifier_Diag(nn.Module):
     Wraps a standard linear classifier and applies closed-form mean and variance propagation.
     See the SUQ paper for theoretical background and assumptions.
 
-    Inputs:
+    Args:
         classifier (nn.Linear): The final classification head
-        w_var (Tensor): Weight variances, shape [D_out, D_in]
-        b_var (Tensor): Bias variances, shape [D_out]
+        w_var (Tensor): Element-wise variance of weight. Shape: `[D_out, D_in]`
+        b_var (Tensor): Element-wise variance of bias. Shape: `[D_out]`
     """
 
     def __init__(self, classifier, w_var, b_var):
@@ -310,13 +316,15 @@ class SUQ_Classifier_Diag(nn.Module):
     
     def forward(self, x_mean, x_var):
         """
-        Inputs:
-            x_mean (Tensor): Input mean, shape [B, D]
-            x_var (Tensor): Input variance, shape [B, D]
+        Forward pass with uncertainty propagation through a SUQ linear layer.
 
-        Outputs:
-            h_mean (Tensor): Output mean, shape [B, D_out]
-            h_var (Tensor): Output variance, shape [B, D_out]
+        Args.
+            x_mean (Tensor): Input mean. Shape: `[B, D_in]`
+            x_var (Tensor): Input element-wise variance. Shape: `[B, D_in]`
+
+        Returns:
+            h_mean (Tensor): Output mean. Shape: `[B, D_out]`
+            h_var (Tensor): Output element-wise variance. Shape: `[B, D_out]`
         """
         with torch.no_grad():
             h_mean, h_var = forward_aW_diag(x_mean, x_var, self.weight.data, self.bias.data, self.w_var, self.b_var)
@@ -329,11 +337,11 @@ class SUQ_TransformerMLP_Diag(nn.Module):
     Supports both deterministic and Bayesian forward modes with closed-form variance propagation.
     Used internally in `SUQ_Transformer_Block_Diag`.
 
-    Inputs:
+    Args:
         MLP (nn.Module): Original MLP submodule
         determinstic (bool): Whether to treat the MLP weights as deterministic
-        w_fc_var (Tensor, optional): Variance of the first linear layer (if Bayesian)
-        w_proj_var (Tensor, optional): Variance of the second linear layer (if Bayesian)
+        w_fc_var (Tensor, optional): Variance of the first linear layer in MLP(if Bayesian)
+        w_proj_var (Tensor, optional): Variance of the second linear layer in MLP (if Bayesian)
     """
 
     def __init__(self, MLP, determinstic = True, w_fc_var = None, w_proj_var = None):
@@ -347,13 +355,15 @@ class SUQ_TransformerMLP_Diag(nn.Module):
 
     def forward(self, x_mean, x_var):
         """
-        Inputs:
-            x_mean (Tensor): Input mean, shape [B, T, D]
-            x_var (Tensor): Input variance, shape [B, T, D]
+        Forward pass with uncertainty propagation through a SUQ Transformer MLP layer.
+        
+        Args:
+            x_mean (Tensor): Input mean. Shape [B, T, D]
+            x_var (Tensor): Input element-wise variance. Shape [B, T, D]
 
-        Outputs:
-            h_mean (Tensor): Output mean, shape [B, T, D]
-            h_var (Tensor): Output variance, shape [B, T, D]
+        Returns:
+            h_mean (Tensor): Output mean. Shape [B, T, D]
+            h_var (Tensor): Output element-wise variance. Shape [B, T, D]
         """
         
         # first fc layer
@@ -380,7 +390,7 @@ class SUQ_Attention_Diag(nn.Module):
     Supports deterministic and Bayesian value projections, with optional diagonal covariance assumptions. For details see SUQ paper section A.6
     Used internally in `SUQ_Transformer_Block_Diag`.
 
-    Inputs:
+    Args:
         Attention (nn.Module): The original attention module
         determinstic (bool): Whether to treat value projections as deterministic
         diag_cov (bool): If True, only compute the diagoanl covariance for value
@@ -399,13 +409,15 @@ class SUQ_Attention_Diag(nn.Module):
 
     def forward(self, x_mean, x_var):
         """
-        Inputs:
-            x_mean (Tensor): Input mean, shape [B, T, D]
-            x_var (Tensor): Input variance, shape [B, T, D]
+        Forward pass with uncertainty propagation through a SUQ Attention layer.
+        
+        Args:
+            x_mean (Tensor): Input mean. Shape [B, T, D]
+            x_var (Tensor): Input element-wise variance. Shape [B, T, D]
 
-        Outputs:
-            output_mean (Tensor): Output mean after attention, shape [B, T, D]
-            output_var (Tensor): Output variance after attention, shape [B, T, D]
+        Returns:
+            output_mean (Tensor): Output mean. Shape [B, T, D]
+            output_var (Tensor): Output element-wise variance. Shape [B, T, D]
         """
 
         with torch.no_grad():
@@ -436,7 +448,7 @@ class SUQ_Transformer_Block_Diag(nn.Module):
     Wraps LayerNorm, attention, and MLP submodules with uncertainty-aware versions.
     Used in `SUQ_ViT_Diag` to form a full transformer stack.
 
-    Inputs:
+    Args:
         MLP (nn.Module): Original MLP submodule
         Attention (nn.Module): Original attention submodule
         LN_1 (nn.LayerNorm): Pre-attention layer norm
@@ -460,13 +472,15 @@ class SUQ_Transformer_Block_Diag(nn.Module):
 
     def forward(self, x_mean, x_var):
         """
-        Inputs:
-            x_mean (Tensor): Input mean, shape [B, T, D]
-            x_var (Tensor): Input variance, shape [B, T, D]
+        Forward pass with uncertainty propagation through a SUQ Transformer block.    
 
-        Outputs:
-            h_mean (Tensor): Output mean after transformer block, shape [B, T, D]
-            h_var (Tensor): Output variance after transformer block, shape [B, T, D]
+        Args:
+            x_mean (Tensor): Input mean. Shape [B, T, D]
+            x_var (Tensor): Input element-wise variance. Shape [B, T, D]
+
+        Returns:
+            h_mean (Tensor): Output mean. Shape [B, T, D]
+            h_var (Tensor): Output element-wise variance. Shape [B, T, D]
         """
         
         h_mean, h_var = self.ln_1(x_mean, x_var)
@@ -494,7 +508,7 @@ class SUQ_ViT_Diag(SUQ_Base):
 
     Currently supports classification only. See the SUQ paper for theoretical background and assumptions.
 
-    Inputs:
+    Args:
         ViT (nn.Module): A Vision Transformer model structured like `examples/vit_model.py`
         posterior_variance (Tensor): Flattened posterior variance vector
         MLP_determinstic (bool): Whether MLP submodules are treated as deterministic
@@ -572,11 +586,11 @@ class SUQ_ViT_Diag(SUQ_Base):
 
         Traverses the full transformer stack with uncertainty propagation.
 
-        Inputs:
+        Args:
             pixel_values (Tensor): Input image tensor, shape [B, C, H, W]
             interpolate_pos_encoding (optional): Optional positional embedding interpolation
 
-        Outputs:
+        Returns:
             x_mean (Tensor): Predicted latent mean at the [CLS] token, shape [B, D]
             x_var (Tensor): Predicted latent variance at the [CLS] token, shape [B, D]
         """
@@ -612,11 +626,11 @@ class SUQ_ViT_Diag(SUQ_Base):
         Performs a full forward pass through the ViT with uncertainty propagation, and
         produces softmax-normalized class probabilities for classification.
 
-        Inputs:
+        Args:
             pixel_values (Tensor): Input image tensor, shape [B, C, H, W]
             interpolate_pos_encoding (optional): Optional positional embedding interpolation
 
-        Outputs:
+        Returns:
             Tensor: Predicted class probabilities, shape [B, num_classes]
         """
 
