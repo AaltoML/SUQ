@@ -9,18 +9,19 @@ from suq.base_suq import SUQ_Base
 
 def forward_aW_diag(a_mean, a_var, weight, bias, w_var, b_var):
     """
-    compute mean and covariance of h = a @ W^T + b when posterior has diag covariance
+    Compute the mean and element-wise variance of `h = a @ W^T + b` when the posterior has diagonal covariance.
     
-    ----- Input -----
-    a_mean: [N, D_in] mean(a)
-    a_var: [N, D_in] a_var[i] = var(a_i)
-    weight: [D_out, D_in] W
-    bias: [D_out, ] b
-    b_var: [D_out, ] b_var[k]: var(b_k)
-    w_var: [D_out, D_in] w_cov[k][i]: var(w_ki)
-    ----- Output -----
-    h_mean: [N, D_out]
-    h_var: [N, D_out] h_var[k] = var(h_k)
+    Args:
+        a_mean (Tensor): Mean of the input `a`. Shape: `[B, D_in]`.
+        a_var (Tensor): Variance of the input `a`. Shape: `[B, D_in] `
+        weight (Tensor): Mean of the weights `W`. Shape: `[D_out, D_in]`
+        bias (Tensor): Mean of the bias `b`. Shape: `[D_out, ]`
+        b_var (Tensor): Element-wise variance of the bias `b`. Shape: `[D_out, ]`
+        w_var (Tensor): Element-wise variance of the weights `W`. Shape: `[D_out, D_in]`
+    
+    Returns: 
+        h_mean (Tensor): Mean of the pre-activations `h`. Shape: `[B, D_out]`
+        h_var (Tensor): Element-wise variance of the pre-activations `h`. Shape: `[B, D_out]`
     """
     
     # calculate mean(h)
@@ -34,19 +35,20 @@ def forward_aW_diag(a_mean, a_var, weight, bias, w_var, b_var):
 
 
 def forward_activation_implicit_diag(activation_func, h_mean, h_var):
+    
     """
-    given h ~ N(h_mean, h_cov), g(·), where h_cov is a diagonal matrix,
-    approximate the distribution of a = g(h) as 
-    a ~ N(g(h_mean), g'(h_mean)^T h_var g'(h_mean))
-    
-    input
-    activation_func: g(·)
-    h_mean: [N, D]
-    h_var: [N, D], h_var[i] = var(h_i)
-    
-    output
-    a_mean: [N, D]
-    a_var: [N, D]
+    Approximate the distribution of `a = g(h)` given `h ~ N(h_mean, h_var)`, where `h_var` 
+    is the element-wise variance of pre-activation `h`.
+    Uses a first-order Taylor expansion: `a ~ N(g(h_mean), g'(h_mean)^T @ h_var @ g'(h_mean))`.
+
+    Args:
+        activation_func (Callable): A PyTorch activation function `g(·)` (e.g. `nn.ReLU()`)
+        h_mean (Tensor): Mean of the pre-activations `h`. Shape: `[B, D]`
+        h_var (Tensor): Element-wise variance of the pre-activations `h`. Shape: `[B, D]`
+
+    Returns:
+        a_mean (Tensor): Mean of the activations `a`. Shape: `[B, D]`
+        a_var (Tensor): Element-wise variance of the activations `a`. Shape: `[B, D]`
     """
 
     h_mean_grad = h_mean.detach().clone().requires_grad_()
@@ -61,18 +63,19 @@ def forward_activation_implicit_diag(activation_func, h_mean, h_var):
     return a_mean.detach(), a_var
 
 def forward_batch_norm_diag(h_var, bn_weight, bn_running_var, bn_eps):
+    
     """
-    Pass a distribution with diagonal covariance through BatchNorm layer
-    
-    Input
-        h_mean: mean of input distribution [B, D]
-        h_var: variance of input distribution [B, D]
-        bn_weight: batch norm scale factor [D, ]
-        bn_running_var: batch norm running variance [D, ]
-        bn_eps: batch norm eps
-    
-    Output
-        output_var [B, T, D]
+    Compute the output variance when a distribution `h ~ N(h_mean, h_var)`
+    is passed through a BatchNorm layer.
+
+    Args:
+        h_var (Tensor): Element-wise variance of the input `h`. Shape: `[B, D]`.
+        bn_weight (Tensor): Batch normalization scale factor (gamma). Shape: `[D,]`.
+        bn_running_var (Tensor): Running variance used in batch normalization. Shape: `[D,]`.
+        bn_eps (float): Small constant added to the denominator for numerical stability.
+
+    Returns:
+        output_var (Tensor): Element-wise variance of the output after batch normalization. Shape: `[B, D]`.
     """
 
     scale_factor = (1 / (bn_running_var.reshape(1, -1) + bn_eps)) * bn_weight.reshape(1, -1) **2 # [B, D]
@@ -86,10 +89,10 @@ class SUQ_Linear_Diag(nn.Module):
     
     Wraps a standard `nn.Linear` layer and applies closed-form mean and variance propagation. See the SUQ paper for theoretical background and assumptions.
 
-    Inputs:
-        org_linear (nn.Linear): The original linear layer to wrap
-        w_var (Tensor): Weight variances, shape [D_out, D_in]
-        b_var (Tensor): Bias variances, shape [D_out]
+    Args:
+        org_linear (nn.Linear): The original linear layer to wrap      
+        w_var (Tensor): Element-wise variance of the weights `W`. Shape: `[D_out, D_in]`
+        b_var (Tensor): Element-wise variance of the bias `b`. Shape: `[D_out, ]`
     """
     def __init__(self, org_linear, w_var, b_var):
         super().__init__()
@@ -101,13 +104,14 @@ class SUQ_Linear_Diag(nn.Module):
     
     def forward(self, a_mean, a_var): 
         """
-        Inputs:
-            a_mean (Tensor): Input mean, shape [N, D_in]
-            a_var (Tensor): Input variance, shape [N, D_in]
+        Forward pass with uncertainty propagation through a SUQ linear layer.
+        
+        Args:
+            a_mean (Tensor): Input mean. Shape: `[B, D_in]`
+            a_var (Tensor): Input element-wise variance. Shape: `[B, D_in]`
 
-        Outputs:
-            h_mean (Tensor): Output mean, shape [N, D_out]
-            h_var (Tensor): Output variance, shape [N, D_out]
+        Returns:
+            h_mean (Tensor): Output mean. Shape: `[B, D_out]`
         """
         
         if a_var == None:
@@ -123,8 +127,8 @@ class SUQ_Activation_Diag(nn.Module):
 
     Wraps a standard activation function and applies a first-order approximation to propagate input variance through the nonlinearity. See the SUQ paper for theoretical background and assumptions.
 
-    Inputs:
-        afun (Callable): A PyTorch activation function (e.g. nn.ReLU())
+    Args:
+        afun (Callable): A PyTorch activation function (e.g. `nn.ReLU()`)
     """
     
     def __init__(self, afun):        
@@ -133,13 +137,15 @@ class SUQ_Activation_Diag(nn.Module):
     
     def forward(self, h_mean, h_var):
         """
-        Inputs:
-            h_mean (Tensor): Input mean before activation, shape [N, D]
-            h_var (Tensor): Input variance before activation, shape [N, D]
+        Forward pass with uncertainty propagation through a SUQ activation layer.
+        
+        Args:
+            h_mean (Tensor): Mean of the pre-activations `h`. Shape: `[B, D]`
+            h_var (Tensor): Element-wise variance of the pre-activation `h`. Shape: `[B, D]`
 
-        Outputs:
-            a_mean (Tensor): Activated output mean, shape [N, D]
-            a_var (Tensor): Approximated output variance, shape [N, D]
+        Returns:
+            a_mean (Tensor): Mean of the activation `a`. Shape: [B, D]
+            a_var (Tensor): Element-wise variance of the activation `a`. Shape: `[B, D]`
         """
         a_mean, a_var = forward_activation_implicit_diag(self.afun, h_mean, h_var)
         return a_mean, a_var
@@ -150,7 +156,7 @@ class SUQ_BatchNorm_Diag(nn.Module):
 
     Wraps `nn.BatchNorm1d` and adjusts input variance using batch normalization statistics and scale parameters. See the SUQ paper for theoretical background and assumptions.
 
-    Inputs:
+    Args:
         BatchNorm (nn.BatchNorm1d): The original batch norm layer
     """
     
@@ -161,13 +167,15 @@ class SUQ_BatchNorm_Diag(nn.Module):
     
     def forward(self, x_mean, x_var):
         """
-        Inputs:
-            x_mean (Tensor): Input mean, shape [B, D]
-            x_var (Tensor): Input variance, shape [B, D]
+        Forward pass with uncertainty propagation through a SUQ BatchNorm layer.
+        
+        Args:
+            x_mean (Tensor): Input mean. Shape: [B, D]
+            x_var (Tensor): Input element-wise variance. Shape: [B, D]
 
-        Outputs:
-            out_mean (Tensor): Output mean after batch normalization, shape [B, D]
-            out_var (Tensor): Output variance after batch normalization, shape [B, D]
+        Returns:
+            out_mean (Tensor): Output mean after batch normalization. Shape: [B, D]
+            out_var (Tensor): Output element-wise variance after batch normalization. Shape: [B, D]
         """
         
         with torch.no_grad():
@@ -190,7 +198,7 @@ class SUQ_MLP_Diag(SUQ_Base):
         - For regression, this is the full model (including final output layer).
         - For classification, exclude the softmax layer and pass only the logit-producing part.
 
-    Inputs:
+    Args:
         org_model (nn.Module): The original MLP model to convert
         posterior_variance (Tensor): Flattened posterior variance vector
         likelihood (str): Either 'classification' or 'regression'
@@ -210,13 +218,13 @@ class SUQ_MLP_Diag(SUQ_Base):
 
         Traverses the model layer by layer, propagating mean and variance through each SUQ-wrapped layer.
 
-        Inputs:
-            data (Tensor): Input data, shape [B, D]
-            out_var (Tensor or None): Optional input variance, shape [B, D]
+        Args:
+            data (Tensor): Input data. Shape: [B, D_in]
+            out_var (Tensor or None): Optional input variance. Shape: [B, D_in]
 
-        Outputs:
-            out_mean (Tensor): Output mean after final layer, shape [B, D_out]
-            out_var (Tensor): Output variance after final layer, shape [B, D_out]
+        Returns:
+            out_mean (Tensor): Output mean after final layer. Shape: [B, D_out]
+            out_var (Tensor): Output element-wise variance after final layer. Shape: [B, D_out]
         """
         
         out_mean = data
@@ -237,14 +245,14 @@ class SUQ_MLP_Diag(SUQ_Base):
         For classification, use probit-approximation.
         For regression, returns the latent mean and total predictive variance.
 
-        Inputs:
-            data (Tensor): Input data, shape [B, D]
+        Args:
+            data (Tensor): Input data. Shape: [B, D]
 
-        Outputs:
+        Returns:
             If classification:
-                Tensor: Class probabilities, shape [B, num_classes]
+                Tensor: Class probabilities. Shape: [B, num_classes]
             If regression:
-                Tuple[Tensor, Tensor]: Output mean and total variance, shape [B, D_out]
+                Tuple[Tensor, Tensor]: Output mean and element-wise variance. Shape: [B, D_out]
         """
         
         out_mean, out_var = self.forward_latent(data)
@@ -262,7 +270,7 @@ class SUQ_MLP_Diag(SUQ_Base):
 
         Each layer is replaced with its corresponding SUQ module (e.g. linear, activation, batchnorm), using the provided flattened posterior variance vector.
 
-        Inputs:
+        Args:
             org_model (nn.Module): The original model to convert (latent function only)
             posterior_variance (Tensor): Flattened posterior variance for Bayesian parameters
         """
@@ -278,11 +286,6 @@ class SUQ_MLP_Diag(SUQ_Base):
                 num_weight_param = D_out * D_in
                 
                 covariance_block = posterior_variance[loc : loc + num_param]
-                
-                """
-                w_var: [D_out, D_in], w_var[k][i] = var(w_ki)
-                b_var: [D_out, ] b_var[k]: var(b_k)
-                """        
                 
                 b_var = torch.zeros_like(layer.bias.data).to(layer.bias.data.device)
                 w_var = torch.zeros_like(layer.weight.data).to(layer.bias.data.device)
