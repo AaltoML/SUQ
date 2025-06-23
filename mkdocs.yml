@@ -1,10 +1,10 @@
-site_name: SUQ.jl
+site_name: SUQ.py
 site_url: https://AaltoML.github.io/SUQ # change this
 
 repo_url: https://github.com/AaltoML/SUQ
 repo_name: AaltoML/SUQ
 
-theme:
+theme: 
   name: material
   language: en
   icon:
@@ -21,7 +21,17 @@ markdown_extensions:
 
 plugins:
   - search
-  - mkdocstrings
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_heading: false
+            show_root_members: true
+            show_root_toc_entry: false
+            heading_level: 3
+            group_by_category: true
+            show_category_heading: true
+            members_order: source
 
 nav:
   - Home: index.md

@@ -1,11 +1,11 @@
-SUQ API Documentation
+# SUQ Documentation
 
-# Base Functions
+## Base Functions
 ::: suq.base_suq
 
-# MLP Functions with Diagonal Covariance
+## MLP Functions with Diagonal Covariance
 ::: suq.diag_suq_mlp
 
-# Transformer Functions with Diagonal Covariance
-::: suq.diag_suq_transformer
 
+## Transformer Functions with Diagonal Covariance
+::: suq.diag_suq_transformer
