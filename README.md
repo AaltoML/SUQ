@@ -5,20 +5,11 @@
 
 
 # SUQ: Streamlined Uncertainty Quantification
+[![MkDocs](https://img.shields.io/badge/MkDocs-526CFE?logo=materialformkdocs&logoColor=fff)](https://aaltoml.github.io/SUQ/)
+[![ICLR](https://img.shields.io/badge/-ICLR-gray)](https://iclr.cc/virtual/2025/poster/28294)
+[![ArXiv](https://img.shields.io/badge/cs.LG-arXiv%3A2411.18425-B31B1B.svg)](https://arxiv.org/abs/2411.18425)
 
-This repository contains an open-source library implementation of Streamlined Uncertainty Quantification (SUQ) used in the paper *Streamlining Prediction in Bayesian Deep Learning* accepted at ICLR 2025.
-
-<table>
-<tr>
-	<td>
-   		<strong> Streamlining Prediction in Bayesian Deep Learning</strong><br>
-            Rui Li, Marcus Klasson, Arno Solin, Martin Trapp<br>
-		<strong>International Conference on Learning Representations (ICLR 2025)</strong><br>
-		<a href="https://arxiv.org/abs/2411.18425"><img alt="Paper" src="https://img.shields.io/badge/-Paper-gray"></a>
-		<a href="https://github.com/AaltoML/suq"><img alt="Code" src="https://img.shields.io/badge/-Code-gray" ></a>
-		</td>
-    </tr>
-</table>
+This repository contains an open-source library implementation of Streamlined Uncertainty Quantification (SUQ) used in the paper *Streamlining Prediction in Bayesian Deep Learning* published at ICLR 2025.
 
 ## SUQ Library
 ### 📦 Installation
@@ -130,9 +121,10 @@ If you encounter any problems, please open a new GitHub issue.
 
 ## Citation
 
+If you use this library, please cite the following publication:
 ```bibtex
 @inproceedings{li2025streamlining,
-  title = {Streamlining Prediction in Bayesian Deep Learning},
+  title = {Streamlining Prediction in {Bayesian} Deep Learning},
   author = {Rui Li, Marcus Klasson, Arno Solin and Martin Trapp},
   booktitle = {International Conference on Learning Representations ({ICLR})},
   year = {2025}
