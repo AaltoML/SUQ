@@ -126,7 +126,7 @@ pred_mean, pred_var = streamlined_layer(input_mean, input_var)
 - Add full covariance
 
 ## Support
-If you run into any issues, please open a new GitHub issue. If you don't get a response within 5 business days, email Rui Li (rui.li@aalto.fi).
+If you encounter any problems, please open a new GitHub issue.
 
 ## Citation
 
