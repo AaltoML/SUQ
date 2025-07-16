@@ -47,7 +47,7 @@ else:
             X, y = X.to(device), y.to(device)
             for _ in range(train_samples):
                 with optimizer.sampled_params(train=True):
-                    pred = ivon_model[:-1](X)
+                    pred = ivon_model[:-1](X) # drop softmax
                     loss = loss_func(pred, y)
                     loss.backward()
             optimizer.step()

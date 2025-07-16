@@ -136,11 +136,12 @@ else:
         model.load_state_dict(torch.load(f'{dataset_name}_vit_mlp.pt'))
 
 model.eval()
-
+softmax = nn.Softmax()
 total_acc = []
 with torch.no_grad():
     for X, y in tqdm(test_loader, desc = "MAP Evaluating"):
         pred = model(X.to(device))
+        pred = softmax(pred) # MAP model needs softmax
         label = y.to(device)
         acc = (pred.argmax(1) == label.argmax(1)).float().cpu()
         total_acc.extend(acc)

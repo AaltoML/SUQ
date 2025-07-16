@@ -36,7 +36,7 @@ else:
 
         for X, y in train_loader:
             optimizer.zero_grad()
-            loss = loss_func(model[:-1](X.to(device)), y.to(device))
+            loss = loss_func(model[:-1](X.to(device)), y.to(device)) # drop softmax
             loss.backward()
             optimizer.step()
             

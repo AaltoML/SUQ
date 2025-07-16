@@ -152,11 +152,12 @@ else:
                     torch.save(optimizer.state_dict(), f"{dataset_name}_vit_ivon-posterior_mlp_{args.hyperparameter_id}.pth")
 
 model.eval()
-
+softmax = nn.Softmax()
 total_acc = []
 with torch.no_grad():
     for X, y in tqdm(test_loader, desc = "MAP Evaluating"):
         pred = model(X.to(device))
+        pred = softmax(pred) # MAP model needs softmax
         label = y.to(device)
         acc = (pred.argmax(1) == label.argmax(1)).float().cpu()
         total_acc.extend(acc)
@@ -172,6 +173,7 @@ with torch.no_grad():
         for i in range(n_samples):
             with optimizer.sampled_params(train=False):
                 pred = model(X)
+                pred = softmax(pred) # IVON model needs softmax
             samples[i] = pred.squeeze().detach()
         pred = torch.mean(samples, axis=0)
 
