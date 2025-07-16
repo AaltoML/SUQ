@@ -35,6 +35,25 @@ def forward_aW_diag_loop(a_mean, a_var, weight, bias, w_var, b_var):
     
     return h_mean, h_var
 
+def forward_aW_einsum_var(a_mean, a_var, weight, w_var, b_var):
+    
+    """
+    a_mean: [N, D_in] mean(a)
+    a_var: [N, D_in] a_var[i] = var(a_i)
+    weight: [D_out, D_in] W
+    bias: [D_out, ] b
+    b_var: [D_out, ] b_var[k]: var(b_k)
+    w_var: [D_out, D_in] w_cov[k][i]: var(w_ki)
+    """
+    
+    
+    h_var = torch.einsum('ni, ni, ki -> nk', a_mean, a_mean, w_var) +\
+            torch.einsum('ki, ki, ni -> nk', weight, weight, a_var) +\
+            torch.einsum('ni, ki -> nk', a_var, w_var) +\
+            + b_var
+            
+    return h_var
+
 def sigmoid_derivative(x):
     return torch.sigmoid(x) * (1. - torch.sigmoid(x))
 
@@ -73,10 +92,12 @@ def test_forward_aW_diag():
     h_var = torch.rand([N, D_in])
 
     h_mean, h_var = forward_aW_diag(a_mean, a_var, weight, bias, w_var, b_var)
+    einsum_h_var = forward_aW_einsum_var(a_mean, a_var, weight, w_var, b_var)
     loop_h_mean, loop_h_var = forward_aW_diag_loop(a_mean, a_var, weight, bias, w_var, b_var)
 
     torch.testing.assert_close(h_mean, loop_h_mean)
     torch.testing.assert_close(h_var, loop_h_var)
+    torch.testing.assert_close(h_var, einsum_h_var)
 
 @pytest.mark.parametrize("activation, derivative", [
     (torch.sigmoid, sigmoid_derivative),
