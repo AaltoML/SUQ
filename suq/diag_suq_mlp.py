@@ -111,7 +111,8 @@ class SUQ_Linear_Diag(nn.Module):
             a_var (Tensor): Input element-wise variance. Shape: `[B, D_in]`
 
         Returns:
-            h_mean (Tensor): Output mean. Shape: `[B, D_out]`
+            h_mean (Tensor): Mean of the output `h'. Shape: `[B, D_out]`
+            h_var (Tensor): Element-wise variance of output `h'. Shape: `[B, D_out]`
         """
         
         if a_var == None:
