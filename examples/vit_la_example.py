@@ -33,7 +33,7 @@ image_processor = AutoImageProcessor.from_pretrained(model_name, use_fast=True)
 
 ## init model
 config = GPTConfig('small')
-model = ViT_Classification(config, huggingface_model, num_classes, return_logits = False)
+model = ViT_Classification(config, huggingface_model, num_classes, return_logits = True)
 # hugging face default vit flash attention false
 for block in model.transformer.h:
     block.attn.flash = False
