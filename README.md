@@ -113,7 +113,6 @@ pred_mean, pred_var = streamlined_layer(input_mean, input_var)
 
 ### 🛠️ TODO
 - Extend support to other Transformer implementations
-- Add Kronecker covariance
 - Add full covariance
 
 ## Support
