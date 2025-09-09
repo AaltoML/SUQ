@@ -98,7 +98,48 @@ def test_fuse_multi_head_cov():
 
     torch.testing.assert_close(res_1, res_2, atol=5e-5, rtol=1e-5)
 
+def test_diag_value_cov():
+    B, T, D, n_h, D_v = 4, 20, 100, 5, 20
+    torch.manual_seed(42)
+    
+    input_mean = torch.rand((B, T, D)).to(device)
+    input_var = torch.rand((B, T, D)).to(device)
+    W_v_var = torch.zeros((D, D)).to(device)
+    W_v = torch.rand((D, D)).to(device)
+    
+    diag_res = forward_value_cov_Bayesian_W(W_v, W_v_var, input_mean, input_var, n_h, D_v, True)
+    cov_res = forward_value_cov_Bayesian_W(W_v, W_v_var, input_mean, input_var, n_h, D_v, False)
 
+    torch.testing.assert_close(diag_res, cov_res.diagonal(dim1=-2, dim2=-1), atol=5e-5, rtol=1e-5)
+
+def test_diag_QKV_cov():
+
+    B, T, D, n_h, D_v = 4, 20, 100, 5, 20
+    torch.manual_seed(42)
+    
+    attention_score = torch.rand((B, n_h, T, T)).to(device)
+    v_cov = torch.rand((B, T, n_h, D_v, D_v)).to(device)
+    
+    cov_res = forward_QKV_cov(attention_score, v_cov, False)
+    diag_res = forward_QKV_cov(attention_score, v_cov.diagonal(dim1=-2, dim2=-1), True)
+
+    torch.testing.assert_close(diag_res, cov_res.diagonal(dim1=-2, dim2=-1), atol=5e-5, rtol=1e-5)
+
+def test_diag_fuse_multi_head_cov():
+    B, T, D, n_h, D_v = 4, 20, 100, 5, 20
+    torch.manual_seed(42)
+    
+    QKV_var = torch.rand((B, n_h, T, D_v)).to(device)
+    QKV_cov = torch.diag_embed(QKV_var)
+    project_W = torch.rand((D, D)).to(device)
+    
+    diag_res = forward_fuse_multi_head_cov(QKV_var, project_W, True)
+    cov_res = forward_fuse_multi_head_cov(QKV_cov, project_W, False)
+    
+    torch.testing.assert_close(diag_res, cov_res, atol=5e-5, rtol=1e-5)
+
+
+    
 
     
 
