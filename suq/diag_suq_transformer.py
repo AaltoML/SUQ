@@ -236,7 +236,7 @@ def forward_fuse_multi_head_cov(QKV_cov, project_W, diag_cov = False):
     """
     if diag_cov:
         B, n_h, T, D_v = QKV_cov.size()
-        output_var = QKV_cov.permute(0, 2, 1, 3).reshape(B, T, n_h * D_v) @ project_W ** 2
+        output_var = QKV_cov.permute(0, 2, 1, 3).reshape(B, T, n_h * D_v) @ project_W.T ** 2
             # QKV_cov [B, n_h, T, D_v] -> [B, T, n_h, D_v] -> [B, T, n_h * D_v]
 
         return output_var
